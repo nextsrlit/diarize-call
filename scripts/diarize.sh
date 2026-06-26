@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# diarize.sh — transcription + speaker diarization via AssemblyAI or Gladia.
+# diarize.sh — transcription + speaker diarization via AssemblyAI, Gladia, or Deepgram.
 # No npm deps required: uses curl, jq, ffmpeg.
 #
 # Usage:
 #   bash diarize.sh [options] <file.m4a|video.mp4> [file2.mp3 ...]
 #
 # Options:
-#   --provider <name>        assemblyai (default) or gladia
+#   --provider <name>        assemblyai (default), gladia, or deepgram
 #   --out <file>             output .md path (default: <input-basename>.md next to input)
-#   --speakers <N>           expected number of speakers
-#   --speakers-min <N>       minimum speakers
-#   --speakers-max <N>       maximum speakers
+#   --speakers <N>           expected number of speakers (ignored for deepgram)
+#   --speakers-min <N>       minimum speakers (ignored for deepgram)
+#   --speakers-max <N>       maximum speakers (ignored for deepgram)
 #   --lang <code>            language code e.g. en, it (default: auto-detect)
 #   --title <string>         title for the markdown (default: filename)
-#   --context <text>         transcription context hint (universal3 only)
+#   --context <text>         transcription context hint (assemblyai/gladia only)
 #   --keyterms <t1,t2,...>   key terms to boost accuracy
 #   --summary                request a provider summary
 #   --help                   show this help
@@ -21,6 +21,7 @@
 # Env:
 #   ASSEMBLYAI_API_KEY       required for provider assemblyai
 #   GLADIA_API_KEY           required for provider gladia
+#   DEEPGRAM_API_KEY         required for provider deepgram
 
 set -euo pipefail
 
@@ -60,14 +61,14 @@ If the input is a video (.mp4 .mov .mkv .avi .webm .m4v), audio is extracted
 automatically. Multiple audio files are concatenated.
 
 Options:
-  --provider <name>        assemblyai (default) or gladia
+  --provider <name>        assemblyai (default), gladia, or deepgram
   --out <file>             output .md path (default: <input-basename>.md)
-  --speakers <N>           expected number of speakers
-  --speakers-min <N>       minimum expected speakers
-  --speakers-max <N>       maximum expected speakers
+  --speakers <N>           expected number of speakers (ignored for deepgram)
+  --speakers-min <N>       minimum expected speakers (ignored for deepgram)
+  --speakers-max <N>       maximum expected speakers (ignored for deepgram)
   --lang <code>            language: en, it, fr, ... (default: auto-detect)
   --title <string>         title in markdown (default: filename)
-  --context <text>         context hint to improve transcription (universal3)
+  --context <text>         context hint to improve transcription (assemblyai/gladia only)
   --keyterms <t1,t2,...>   key terms to boost (names, acronyms, products)
   --summary                request a provider bullet summary
   --help                   show this help
@@ -75,6 +76,7 @@ Options:
 Env:
   ASSEMBLYAI_API_KEY       required for assemblyai
   GLADIA_API_KEY           required for gladia
+  DEEPGRAM_API_KEY         required for deepgram
 EOF
 }
 
@@ -136,6 +138,7 @@ list_file=""
 cleanup() {
   [ -n "$tmp_audio" ] && rm -f "$tmp_audio"
   [ -n "$list_file" ] && rm -f "$list_file"
+  :
 }
 trap cleanup EXIT
 
@@ -313,8 +316,75 @@ elif [ "$provider" = "gladia" ]; then
     }]
   }')
 
+elif [ "$provider" = "deepgram" ]; then
+
+  [ -n "${DEEPGRAM_API_KEY:-}" ] || { echo "❌ DEEPGRAM_API_KEY is not set." >&2; exit 1; }
+
+  # MIME type from extension (Deepgram accepts any audio; m4a/mp4 both map to audio/mp4)
+  case "${audio_file##*.}" in
+    mp3)  ctype="audio/mpeg" ;;
+    wav)  ctype="audio/wav"  ;;
+    flac) ctype="audio/flac" ;;
+    ogg)  ctype="audio/ogg"  ;;
+    *)    ctype="audio/mp4"  ;;
+  esac
+
+  params="diarize=true&utterances=true&punctuate=true&model=nova-3"
+
+  if [ -n "$lang" ]; then
+    params="$params&language=$lang"
+  else
+    params="$params&detect_language=true"
+  fi
+
+  if $do_summary; then
+    params="$params&summarize=v2"
+  fi
+
+  # --speakers* not supported by Deepgram nova-3 diarization
+  if [ -n "$speakers" ] || [ -n "$speakers_min" ] || [ -n "$speakers_max" ]; then
+    echo "⚠️  --speakers/--speakers-min/--speakers-max ignored for Deepgram (auto-detected)"
+  fi
+
+  if [ -n "$keyterms" ]; then
+    IFS=',' read -ra _kterms <<< "$keyterms"
+    for _kt in "${_kterms[@]}"; do
+      _kt="${_kt#"${_kt%%[![:space:]]*}"}"
+      _kt="${_kt%"${_kt##*[![:space:]]}"}"
+      [ -n "$_kt" ] && params="$params&keyterm=$(printf '%s' "$_kt" | jq -Rr '@uri')"
+    done
+    echo "🔑 Keyterms: $keyterms"
+  fi
+
+  echo "🎙️  Transcribing (Deepgram Nova-3)..."
+  result=$(curl -s -X POST "https://api.deepgram.com/v1/listen?$params" \
+    -H "Authorization: Token $DEEPGRAM_API_KEY" \
+    -H "Content-Type: $ctype" \
+    --data-binary @"$audio_file")
+
+  err=$(echo "$result" | jq -r '.err_msg // empty' 2>/dev/null || true)
+  [ -z "$err" ] || { echo "❌ Deepgram error: $err" >&2; exit 1; }
+
+  utt_count=$(echo "$result" | jq '.results.utterances | length' 2>/dev/null || echo 0)
+  [ "${utt_count:-0}" -gt 0 ] || {
+    echo "❌ Deepgram returned no utterances." >&2
+    echo "$result" | jq -r '.error // .err_msg // "unknown error"' >&2
+    exit 1
+  }
+
+  # Normalize: speaker int→string, seconds→ms, transcript→text
+  result=$(echo "$result" | jq '{
+    utterances: [.results.utterances[] | {
+      speaker: (.speaker | tostring),
+      start:   (.start * 1000 | round),
+      end:     (.end   * 1000 | round),
+      text:    .transcript
+    }],
+    summary: (.results.summary.short // null)
+  }')
+
 else
-  echo "❌ Unknown provider: $provider. Use assemblyai or gladia." >&2
+  echo "❌ Unknown provider: $provider. Use assemblyai, gladia, or deepgram." >&2
   exit 1
 fi
 

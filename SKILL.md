@@ -24,8 +24,9 @@ The script checks for missing tools at startup and prints install instructions i
 **Required env vars** (add to `~/.bashrc` / `~/.zshrc` / your shell profile):
 - `ASSEMBLYAI_API_KEY` — for AssemblyAI (default provider). Get one at assemblyai.com.
 - `GLADIA_API_KEY` — if you prefer Gladia. Pass `--provider gladia` to use it.
+- `DEEPGRAM_API_KEY` — if you prefer Deepgram Nova-3. Pass `--provider deepgram` to use it. Note: `--speakers`, `--speakers-min`, `--speakers-max`, and `--context` are ignored (Deepgram auto-detects speakers; use `--keyterms` for term boosting).
 
-If `ASSEMBLYAI_API_KEY` is missing, stop and ask the user to set it before proceeding.
+If the provider's API key is missing, stop and ask the user to set it before proceeding.
 
 ## Input to collect
 

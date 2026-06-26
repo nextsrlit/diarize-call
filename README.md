@@ -46,7 +46,7 @@ export GLADIA_API_KEY=your_key_here
 Copy the skill into your global skills directory:
 
 ```bash
-git clone https://github.com/fstrapp/diarize-call ~/.claude/skills/diarize-call
+git clone https://github.com/nextsrlit/diarize-call ~/.claude/skills/diarize-call
 ```
 
 Claude Code will auto-discover it. Trigger by describing what you want:
@@ -66,7 +66,7 @@ See the instructions in ./diarize-call/SKILL.md for transcribing and diarizing m
 ```
 
 ```bash
-git clone https://github.com/fstrapp/diarize-call
+git clone https://github.com/nextsrlit/diarize-call
 ```
 
 ### Any other LLM CLI

@@ -21,7 +21,7 @@
  * Requires ffmpeg and ffprobe in PATH.
  */
 
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
@@ -41,10 +41,12 @@ function parseArgs(argv) {
 function die(msg) { console.error('❌ ' + msg); process.exit(1) }
 
 function videoDurationSec(video) {
-  const out = execSync(
-    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${video}"`,
-    { encoding: 'utf8' }
-  ).trim()
+  const out = execFileSync('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1',
+    video,
+  ], { encoding: 'utf8' }).trim()
   const d = parseFloat(out)
   if (!isFinite(d) || d <= 0) die(`Could not read video duration from ffprobe: "${out}"`)
   return d
@@ -73,7 +75,7 @@ function hhmmss(sec) {
 
 function grabFrame(video, sec, outPath) {
   // -ss prima di -i = seek veloce; -frames:v 1 = un fotogramma; -q:v 2 = alta qualità jpg
-  execSync(`ffmpeg -y -ss ${sec.toFixed(2)} -i "${video}" -frames:v 1 -q:v 2 "${outPath}"`, { stdio: 'pipe' })
+  execFileSync('ffmpeg', ['-y', '-ss', sec.toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '2', outPath], { stdio: 'pipe' })
 }
 
 function main() {

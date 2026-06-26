@@ -132,7 +132,11 @@ json_out="${out%.md}.json"
 
 # ── temp file + cleanup ───────────────────────────────────────────────────────
 tmp_audio=""
-cleanup() { [ -n "$tmp_audio" ] && rm -f "$tmp_audio"; }
+list_file=""
+cleanup() {
+  [ -n "$tmp_audio" ] && rm -f "$tmp_audio"
+  [ -n "$list_file" ] && rm -f "$list_file"
+}
 trap cleanup EXIT
 
 # ── audio extraction / concatenation ─────────────────────────────────────────
@@ -230,7 +234,8 @@ if [ "$provider" = "assemblyai" ]; then
     exit 1
   }
 
-  # Poll
+  # Poll (max 180 attempts × 5s = 15 min)
+  attempt=0
   while true; do
     result=$(curl -s "https://api.assemblyai.com/v2/transcript/$transcript_id" \
       -H "Authorization: $ASSEMBLYAI_API_KEY")
@@ -242,6 +247,7 @@ if [ "$provider" = "assemblyai" ]; then
         echo "❌ AssemblyAI error: $(echo "$result" | jq -r '.error')" >&2
         exit 1 ;;
       *)
+        (( attempt++ > 180 )) && { echo ""; echo "❌ Timeout: AssemblyAI job did not complete after 15 min." >&2; exit 1; }
         printf '.' ; sleep 5 ;;
     esac
   done
@@ -283,14 +289,17 @@ elif [ "$provider" = "gladia" ]; then
   result_url=$(echo "$init_resp" | jq -r '.result_url')
   [ "$result_url" != "null" ] && [ -n "$result_url" ] || { echo "❌ Gladia init failed: $init_resp" >&2; exit 1; }
 
-  # Poll
+  # Poll (max 180 attempts × 3s = 9 min)
+  attempt=0
   while true; do
     result=$(curl -s "$result_url" -H "x-gladia-key: $GLADIA_API_KEY")
     status=$(echo "$result" | jq -r '.status')
     case "$status" in
       done)  echo ""; break ;;
       error) echo ""; echo "❌ Gladia error: $(echo "$result" | jq -r '.error_code // "unknown"')" >&2; exit 1 ;;
-      *)     printf '.'; sleep 3 ;;
+      *)
+        (( attempt++ > 180 )) && { echo ""; echo "❌ Timeout: Gladia job did not complete after 9 min." >&2; exit 1; }
+        printf '.'; sleep 3 ;;
     esac
   done
 

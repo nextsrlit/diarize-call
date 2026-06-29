@@ -4,7 +4,7 @@
 
 Given a meeting recording (video or audio), this skill:
 
-1. Diarizes it via **AssemblyAI** or **Gladia** — no npm, pure curl
+1. Diarizes it via **AssemblyAI**, **Gladia**, or **Deepgram** — no npm, pure curl
 2. Extracts frames from the video and uses **Claude's vision** to identify real participant names from Teams/Meet overlays
 3. Produces a clean **speaker-labeled transcript** and a **narrative summary**
 
@@ -12,7 +12,7 @@ Given a meeting recording (video or audio), this skill:
 
 - Works with Teams, Google Meet, OBS, or any video/audio file (mp4, mkv, webm, m4a, mp3, ...)
 - Identifies real speaker names from video overlays — not just "Speaker A/B"
-- Two diarization providers: AssemblyAI (default) and Gladia
+- Three diarization providers: AssemblyAI (default), Gladia, and Deepgram Nova-3
 - Context hints and key terms to improve ASR accuracy on technical content
 - Zero npm dependencies — only `curl`, `jq`, `ffmpeg`, `node`
 
@@ -27,16 +27,19 @@ Given a meeting recording (video or audio), this skill:
 
 The script checks for missing tools at startup and prints install instructions.
 
-## API Key
+## API Keys
 
-Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+Add the key(s) for your preferred provider to your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-# AssemblyAI (default) — get one at assemblyai.com
+# AssemblyAI (default) — assemblyai.com
 export ASSEMBLYAI_API_KEY=your_key_here
 
-# Gladia (alternative) — get one at gladia.io
+# Gladia (alternative) — gladia.io
 export GLADIA_API_KEY=your_key_here
+
+# Deepgram Nova-3 (alternative) — deepgram.com
+export DEEPGRAM_API_KEY=your_key_here
 ```
 
 ## Installation
@@ -113,6 +116,9 @@ bash scripts/diarize.sh meeting.mp4 \
 # Gladia provider
 bash scripts/diarize.sh recording.m4a --provider gladia --speakers 2
 
+# Deepgram Nova-3 provider (synchronous, no polling, auto-detects speakers)
+bash scripts/diarize.sh recording.m4a --provider deepgram
+
 # Multiple audio files (concatenated automatically)
 bash scripts/diarize.sh part1.mp3 part2.mp3 --out output.md
 ```
@@ -136,17 +142,23 @@ recording/
 ## Options
 
 ```
---provider <name>        assemblyai (default) or gladia
+--provider <name>        assemblyai (default), gladia, or deepgram
 --out <file>             output .md path
---speakers <N>           expected number of speakers
---speakers-min <N>       minimum expected speakers
---speakers-max <N>       maximum expected speakers
+--speakers <N>           expected number of speakers (ignored for deepgram)
+--speakers-min <N>       minimum expected speakers (ignored for deepgram)
+--speakers-max <N>       maximum expected speakers (ignored for deepgram)
 --lang <code>            language code: en, it, fr, ... (default: auto-detect)
 --title <string>         title for the markdown output
---context <text>         transcription context hint (improves accuracy)
+--context <text>         transcription context hint (assemblyai/gladia only)
 --keyterms <t1,t2,...>   key terms to boost: names, acronyms, product names
 --summary                include a provider-generated bullet summary
 ```
+
+| Provider | Model | Polling | Speaker hint | Context hint |
+|----------|-------|---------|--------------|--------------|
+| `assemblyai` | Universal-3 Pro | yes (5 s) | ✅ | ✅ |
+| `gladia` | Solaria | yes (3 s) | ✅ | — |
+| `deepgram` | Nova-3 | no (sync) | — (auto) | — |
 
 > **Tip:** `--context` and `--keyterms` are the most effective levers for accuracy. Names of people, companies, and systems are frequently mangled by ASR without them.
 
